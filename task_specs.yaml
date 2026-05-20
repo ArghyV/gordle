@@ -1,0 +1,318 @@
+- id: T1
+  title: Define shared types and interfaces
+  package: main
+  artifact_in: []
+  artifact_out:
+    - type: code_output
+      ref: "types.go"
+  depends_on: []
+  symbols_required: []
+  function_signatures:
+    - "type LLMCaller interface { Call(ctx context.Context, prompt string) (string, error) }"
+    - "type ArtifactStore interface { Promote(ref string, version int, content []byte) error; Get(ref string, version int) ([]byte, error) }"
+    - "type Validator interface { Validate(cmd string, workdir string) (passed bool, output string, err error) }"
+    - "type TaskSpec struct { ID string; Title string; Package string; ArtifactIn []ArtifactRef; ArtifactOut []ArtifactRef; DependsOn []string; SymbolsRequired []SymbolRef; FunctionSignatures []string; InterfaceImpl string; ErrorConvention string; ValidationCmd string; Notes string }"
+    - "type ArtifactRef struct { Type string; Ref string }"
+    - "type SymbolRef struct { Symbol string; Location string }"
+    - "type Options struct { YoloMode bool; MaxRetries int; PlanFile string }"
+  error_convention: "All functions return (T, error). No panics. No sentinel errors."
+  validation_cmd: "go build ./... && go vet ./..."
+  constraints_inherited: true
+  notes: "Foundational task — no implementation, types and interface contracts only. FORBIDDEN: dot-imports, circular deps, multiline string literals, macros."
+
+- id: T2
+  title: Implement artifacts package (versioned store)
+  package: artifacts
+  artifact_in:
+    - type: code_output
+      ref: "types.go"
+  artifact_out:
+    - type: code_output
+      ref: "artifacts/store.go"
+  depends_on:
+    - T1
+  symbols_required:
+    - symbol: ArtifactStore
+      location: "types.go"
+  function_signatures:
+    - "func NewStore(rootDir string) *Store"
+    - "func (s *Store) Promote(ref string, version int, content []byte) error"
+    - "func (s *Store) Get(ref string, version int) ([]byte, error)"
+  interface_impl: "ArtifactStore"
+  error_convention: "All functions return (T, error). No panics. No sentinel errors."
+  validation_cmd: "go build ./artifacts && go vet ./artifacts && go test ./artifacts"
+  constraints_inherited: true
+  notes: "Layout: .harness/artifacts/{design_doc,task_specs,code_output}/. Version suffix pattern: {name}_v{N}. Return os.ErrNotExist for missing artifact. Create directories if absent. FORBIDDEN: dot-imports, circular deps, multiline string literals, macros."
+
+- id: T3a
+  title: Implement llm cache (SHA-256 keyed JSON cache)
+  package: llm
+  artifact_in:
+    - type: code_output
+      ref: "types.go"
+  artifact_out:
+    - type: code_output
+      ref: "llm/cache.go"
+  depends_on:
+    - T1
+  symbols_required: []
+  function_signatures:
+    - "func NewCache(cacheDir string) *Cache"
+    - "func (c *Cache) Get(promptHash string) (string, error)"
+    - "func (c *Cache) Set(promptHash string, response string) error"
+    - "func HashPrompt(prompt string) string"
+  error_convention: "All functions return (T, error). No panics. No sentinel errors."
+  validation_cmd: "go build ./llm && go vet ./llm && go test ./llm"
+  constraints_inherited: true
+  notes: "Key: hex(SHA-256(prompt)). Store as JSON at .harness/cache/{hash}.json. Return os.ErrNotExist on miss. FORBIDDEN: dot-imports, circular deps, multiline string literals, macros."
+
+- id: T3b
+  title: Implement llm package (Cerebras caller, .env loader)
+  package: llm
+  artifact_in:
+    - type: code_output
+      ref: "types.go"
+    - type: code_output
+      ref: "llm/cache.go"
+  artifact_out:
+    - type: code_output
+      ref: "llm/cerebras.go"
+  depends_on:
+    - T1
+    - T3a
+  symbols_required:
+    - symbol: LLMCaller
+      location: "types.go"
+    - symbol: Cache
+      location: "llm/cache.go"
+    - symbol: NewCache
+      location: "llm/cache.go"
+    - symbol: HashPrompt
+      location: "llm/cache.go"
+  function_signatures:
+    - "func NewCerebras(apiKey string, cache *Cache) *Cerebras"
+    - "func (c *Cerebras) Call(ctx context.Context, prompt string) (string, error)"
+    - "func LoadAPIKey(envPath string) (string, error)"
+    - "func EnsureGitignore(workdir string) error"
+  interface_impl: "LLMCaller"
+  error_convention: "All functions return (T, error). No panics. No sentinel errors."
+  validation_cmd: "go build ./llm && go vet ./llm && go test ./llm"
+  constraints_inherited: true
+  notes: "Env var: CEREBRAS_API_KEY. Cache check before API call; write cache on success. EnsureGitignore appends .env to .gitignore if missing — called once at startup. Never log key. FORBIDDEN: dot-imports, circular deps, multiline string literals, macros."
+
+- id: T4
+  title: Implement validator package (ephemeral container runner)
+  package: validator
+  artifact_in:
+    - type: code_output
+      ref: "types.go"
+  artifact_out:
+    - type: code_output
+      ref: "validator/container.go"
+  depends_on:
+    - T1
+  symbols_required:
+    - symbol: Validator
+      location: "types.go"
+  function_signatures:
+    - "func NewContainerValidator(image string) *ContainerValidator"
+    - "func (v *ContainerValidator) Validate(cmd string, workdir string) (passed bool, output string, err error)"
+  interface_impl: "Validator"
+  error_convention: "All functions return (T, error). No panics. No sentinel errors."
+  validation_cmd: "go build ./validator && go vet ./validator && go test ./validator"
+  constraints_inherited: true
+  notes: "Image: golang:1.22-alpine. Bind-mount workdir read-only. Disable container networking. Always destroy container after run, including on error paths. External dep: github.com/docker/docker. FORBIDDEN: dot-imports, circular deps, multiline string literals, macros."
+
+- id: T5
+  title: Implement injector package (context assembly + prompt templates)
+  package: injector
+  artifact_in:
+    - type: code_output
+      ref: "types.go"
+  artifact_out:
+    - type: code_output
+      ref: "injector/assemble.go"
+  depends_on:
+    - T1
+    - T2
+  symbols_required:
+    - symbol: TaskSpec
+      location: "types.go"
+    - symbol: ArtifactStore
+      location: "types.go"
+    - symbol: ArtifactRef
+      location: "types.go"
+    - symbol: SymbolRef
+      location: "types.go"
+    - symbol: ArtifactStore.Get
+      location: "types.go"
+  function_signatures:
+    - "func Assemble(task TaskSpec, store ArtifactStore, grepIndex map[string]string, priorErrors string) (string, error)"
+  error_convention: "All functions return (T, error). No panics. No sentinel errors."
+  validation_cmd: "go build ./injector && go vet ./injector && go test ./injector"
+  constraints_inherited: true
+  notes: "Prompt structure: task spec (YAML-marshalled) + artifact_in contents (fetched via store.Get) + grep index entries + priorErrors block. Use string concatenation or text/template — no multiline raw literals. FORBIDDEN: dot-imports, circular deps, multiline string literals, macros."
+
+- id: T6
+  title: Implement queue package (decompose, dependency resolution, dispatch loop, retry)
+  package: queue
+  artifact_in:
+    - type: code_output
+      ref: "types.go"
+    - type: code_output
+      ref: "artifacts/store.go"
+    - type: code_output
+      ref: "llm/cerebras.go"
+    - type: code_output
+      ref: "validator/container.go"
+    - type: code_output
+      ref: "injector/assemble.go"
+  artifact_out:
+    - type: code_output
+      ref: "queue/dispatch.go"
+  depends_on:
+    - T1
+    - T2
+    - T3b
+    - T4
+    - T5
+  symbols_required:
+    - symbol: TaskSpec
+      location: "types.go"
+    - symbol: ArtifactStore
+      location: "types.go"
+    - symbol: LLMCaller
+      location: "types.go"
+    - symbol: LLMCaller.Call
+      location: "types.go"
+    - symbol: Validator
+      location: "types.go"
+    - symbol: Validator.Validate
+      location: "types.go"
+    - symbol: ArtifactStore.Promote
+      location: "types.go"
+    - symbol: ArtifactStore.Get
+      location: "types.go"
+    - symbol: Assemble
+      location: "injector/assemble.go"
+  function_signatures:
+    - "func Decompose(planFile string, caller LLMCaller) ([]TaskSpec, error)"
+    - "func Dispatch(task TaskSpec, store ArtifactStore, caller LLMCaller, v Validator, maxRetries int) error"
+    - "func resolveOrder(tasks []TaskSpec) ([]TaskSpec, error)"
+  error_convention: "All functions return (T, error). No panics. No sentinel errors."
+  validation_cmd: "go build ./queue && go vet ./queue && go test ./queue"
+  constraints_inherited: true
+  notes: "Decompose: send decomposition-prompt + plan body to LLM, unmarshal []TaskSpec from YAML response. resolveOrder: topological sort on DependsOn — return error on cycle. Dispatch: Assemble → LLM call → write staging → Validate → Promote or retry. On retry, append validator stdout+stderr to priorErrors. Halt after maxRetries exhausted. FORBIDDEN: dot-imports, circular deps, multiline string literals, macros."
+
+- id: T7
+  title: Implement main package (CLI, spinner, confirmation prompts, orchestration)
+  package: main
+  artifact_in:
+    - type: code_output
+      ref: "types.go"
+    - type: code_output
+      ref: "queue/dispatch.go"
+    - type: code_output
+      ref: "llm/cerebras.go"
+    - type: code_output
+      ref: "llm/cache.go"
+    - type: code_output
+      ref: "artifacts/store.go"
+    - type: code_output
+      ref: "validator/container.go"
+  artifact_out:
+    - type: code_output
+      ref: "main/main.go"
+  depends_on:
+    - T1
+    - T2
+    - T3a
+    - T3b
+    - T4
+    - T5
+    - T6
+  symbols_required:
+    - symbol: Options
+      location: "types.go"
+    - symbol: TaskSpec
+      location: "types.go"
+    - symbol: Decompose
+      location: "queue/dispatch.go"
+    - symbol: Dispatch
+      location: "queue/dispatch.go"
+    - symbol: NewCerebras
+      location: "llm/cerebras.go"
+    - symbol: LoadAPIKey
+      location: "llm/cerebras.go"
+    - symbol: EnsureGitignore
+      location: "llm/cerebras.go"
+    - symbol: NewCache
+      location: "llm/cache.go"
+    - symbol: NewStore
+      location: "artifacts/store.go"
+    - symbol: NewContainerValidator
+      location: "validator/container.go"
+  function_signatures:
+    - "func Run(planFile string, opts Options) error"
+    - "func main()"
+    - "func confirmTask(task TaskSpec) (bool, error)"
+    - "func spinnerStart(label string) func()"
+  error_convention: "All functions return (T, error). No panics. No sentinel errors."
+  validation_cmd: "go build ./... && go vet ./... && go test ./..."
+  constraints_inherited: true
+  notes: "Flags: --plan (required), --yolo (bool), --max-retries (int, default 2). spinnerStart returns a stop func; caller defers it. Confirmation prompt prints task ID, provider, artifact_in list; N skips task, not pipeline. Spinner writes to stderr only. Exit non-zero on Dispatch error. FORBIDDEN: dot-imports, circular deps, multiline string literals, macros."
+
+- id: T8
+  title: Integration tests
+  package: main
+  artifact_in:
+    - type: code_output
+      ref: "main/main.go"
+    - type: code_output
+      ref: "queue/dispatch.go"
+    - type: code_output
+      ref: "artifacts/store.go"
+    - type: code_output
+      ref: "llm/cerebras.go"
+    - type: code_output
+      ref: "llm/cache.go"
+    - type: code_output
+      ref: "validator/container.go"
+    - type: code_output
+      ref: "injector/assemble.go"
+  artifact_out:
+    - type: code_output
+      ref: "main/integration_test.go"
+  depends_on:
+    - T1
+    - T2
+    - T3a
+    - T3b
+    - T4
+    - T5
+    - T6
+    - T7
+  symbols_required:
+    - symbol: Run
+      location: "main/main.go"
+    - symbol: Options
+      location: "types.go"
+    - symbol: Decompose
+      location: "queue/dispatch.go"
+    - symbol: Dispatch
+      location: "queue/dispatch.go"
+    - symbol: LLMCaller
+      location: "types.go"
+    - symbol: ArtifactStore
+      location: "types.go"
+    - symbol: Validator
+      location: "types.go"
+  function_signatures:
+    - "func TestPipelineE2E(t *testing.T)"
+    - "func TestDecomposeAndDispatch(t *testing.T)"
+    - "func TestRetryExhaustion(t *testing.T)"
+    - "func TestDependencyOrderEnforced(t *testing.T)"
+  error_convention: "All functions return (T, error). No panics. No sentinel errors."
+  validation_cmd: "go test ./... -v"
+  constraints_inherited: true
+  notes: "Use stub implementations of LLMCaller, Validator, ArtifactStore (in-memory). Cover: decomposition parse, topological ordering, retry up to maxRetries, validation failure → error propagation, successful promote. FORBIDDEN: dot-imports, circular deps, multiline string literals, macros."
