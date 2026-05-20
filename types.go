@@ -1,5 +1,5 @@
 // Package main provides shared type definitions and interface contracts for the gordle system. It does not implement any functionality.
-package main
+package gordle
 
 import (
 	"context"

@@ -1,6 +1,6 @@
 // Package gordle provides core type definitions and interfaces for the gordle system.
 // It does not implement any concrete logic; implementations reside in sub‑packages.
-package gordle
+package main_test
 
 import (
 	"context"
