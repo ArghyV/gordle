@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ArghyV/gordle"
+	"github.com/ArghyV/gordle/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,7 +16,7 @@ import (
 // It marshals the task specification to YAML, retrieves each input artifact from the
 // provided store, appends the grep index entries, and includes any prior error messages.
 // The function returns the assembled prompt or an error if any step fails.
-func Assemble(task gordle.TaskSpec, store gordle.ArtifactStore, grepIndex map[string]string, priorErrors string) (string, error) {
+func Assemble(task types.TaskSpec, store types.ArtifactStore, grepIndex map[string]string, priorErrors string) (string, error) {
 	var sb strings.Builder
 
 	// Marshal the task specification to YAML.

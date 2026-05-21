@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArghyV/gordle/types"
 	"github.com/ArghyV/gordle/artifacts"
 	"github.com/ArghyV/gordle/llm"
 	"github.com/ArghyV/gordle/queue"
@@ -19,7 +20,7 @@ import (
 // It loads the API key, ensures a .gitignore entry, creates required components, and
 // processes each task with optional confirmation and retry handling.
 // Returns an error if any step fails.
-func Run(planFile string, opts Options) error {
+func Run(planFile string, opts types.Options) error {
 	// Load the Cerebras API key from the .env file.
 	apiKey, err := llm.LoadAPIKey(".env")
 	if err != nil {
@@ -92,7 +93,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	opts := Options{
+	opts := types.Options{
 		YoloMode:   yolo,
 		MaxRetries: maxRetries,
 		PlanFile:   plan,
@@ -106,7 +107,7 @@ func main() {
 
 // confirmTask displays task details and prompts the user for confirmation.
 // It returns true if the user confirms, false if the user declines, and an error on I/O failure.
-func confirmTask(task TaskSpec) (bool, error) {
+func confirmTask(task types.TaskSpec) (bool, error) {
 	fmt.Printf("Task ID: %s\n", task.ID)
 	fmt.Printf("Package: %s\n", task.Package)
 	fmt.Printf("ArtifactIn:\n")

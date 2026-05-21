@@ -7,10 +7,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ArghyV/gordle"
+	"github.com/ArghyV/gordle/types"
+
 )
 
-// Store implements the gordle.ArtifactStore interface using the local file system.
+// Store implements the types.ArtifactStore interface using the local file system.
 // It stores artifacts under a root directory, creating sub‑directories as needed.
 type Store struct {
 	// rootDir is the base directory where artifacts are stored.
@@ -73,5 +74,5 @@ func (s *Store) Get(ref string, version int) ([]byte, error) {
 	return data, nil
 }
 
-// Ensure Store satisfies the gordle.ArtifactStore interface.
-var _ gordle.ArtifactStore = (*Store)(nil)
+// Ensure Store satisfies the types.ArtifactStore interface.
+var _ types.ArtifactStore = (*Store)(nil)
