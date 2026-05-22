@@ -32,45 +32,45 @@ type Validator interface {
 // TaskSpec describes a task's metadata, dependencies, and required signatures.
 type TaskSpec struct {
 	// ID is the unique identifier of the task.
-	ID string
+	ID string `yaml:"id"`
 	// Title is a short human‑readable title for the task.
-	Title string
+	Title string `yaml:"title"`
 	// Package is the Go package name where the task's code will reside.
-	Package string
+	Package string `yaml:"package"`
 	// ArtifactIn lists input artifacts required by the task.
-	ArtifactIn []ArtifactRef
+	ArtifactIn []ArtifactRef `yaml:"artifact_in"`
 	// ArtifactOut lists output artifacts produced by the task.
-	ArtifactOut []ArtifactRef
+	ArtifactOut []ArtifactRef `yaml:"artifact_out"`
 	// DependsOn lists IDs of tasks that must be completed before this task.
-	DependsOn []string
+	DependsOn []string `yaml:"depends_on"`
 	// SymbolsRequired lists symbols that must be available for the task.
-	SymbolsRequired []SymbolRef
+	SymbolsRequired []SymbolRef `yaml:"symbols_required"`
 	// FunctionSignatures lists the function signatures that the task must implement.
-	FunctionSignatures []string
+	FunctionSignatures []string `yaml:"function_signatures"`
 	// InterfaceImpl specifies the name of an interface that the task implements, if any.
-	InterfaceImpl string
+	InterfaceImpl string `yaml:"interface_impl"`
 	// ErrorConvention describes the error handling policy for the task.
-	ErrorConvention string
+	ErrorConvention string `yaml:"error_convention"`
 	// ValidationCmd is the command used to validate the task's generated code.
-	ValidationCmd string
+	ValidationCmd string `yaml:"validation_cmd"`
 	// Notes contains any additional information about the task.
-	Notes string
+	Notes string `yaml:"notes"`
 }
 
 // ArtifactRef describes a reference to an artifact, including its type and identifier.
 type ArtifactRef struct {
 	// Type indicates the kind of artifact (e.g., "code", "data").
-	Type string
+	Type string `yaml:"type"`
 	// Ref is the unique reference string for the artifact.
-	Ref string
+	Ref string `yaml:"ref"`
 }
 
 // SymbolRef describes a required symbol, including its name and location.
 type SymbolRef struct {
 	// Symbol is the name of the required symbol.
-	Symbol string
+	Symbol string `yaml:"symbol"`
 	// Location indicates where the symbol is defined (e.g., package path).
-	Location string
+	Location string `yaml:"location"`
 }
 
 // Options configures execution parameters for task processing.

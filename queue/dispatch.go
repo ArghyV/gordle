@@ -44,11 +44,56 @@ func Decompose(planFile string, caller types.LLMCaller) ([]types.TaskSpec, error
 		return nil, fmt.Errorf("decompose: llm call: %w", err)
 	}
 
+	// Extract YAML from response: the LLM outputs validation result (prose), YAML tasks, and dependency graph.
+	// We need to isolate just the YAML array portion (lines starting with `- id:` through the last indented field).
+	yamlLines := extractYAMLTasks(resp)
+
 	var tasks []types.TaskSpec
-	if err := yaml.Unmarshal([]byte(resp), &tasks); err != nil {
+	if err := yaml.Unmarshal([]byte(yamlLines), &tasks); err != nil {
 		return nil, fmt.Errorf("decompose: unmarshal: %w", err)
 	}
 	return tasks, nil
+}
+
+// extractYAMLTasks finds and returns the YAML task list portion of the decomposition response,
+// skipping prose preamble (validation result) and the trailing dependency graph.
+func extractYAMLTasks(resp string) string {
+	lines := strings.Split(resp, "\n")
+	var yamlStart, yamlEnd int
+	yamlStart = -1
+
+	// Find first line starting with `- id:` (start of YAML array).
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "- id:") {
+			yamlStart = i
+			break
+		}
+	}
+	if yamlStart == -1 {
+		return resp // Fallback: return whole response and let unmarshaller fail with better error
+	}
+
+	// Find last line that is part of YAML (either indented or blank within the task block).
+	// Dependency graph is plain text like "T1 → T2 → T3" (no leading spaces).
+	// Stop at first non-indented, non-empty line after YAML start.
+	yamlEnd = len(lines)
+	for i := yamlStart + 1; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		// Empty line within YAML is ok; continue scanning.
+		if trimmed == "" {
+			continue
+		}
+		// Line starting with '-' is a new task; include it.
+		// Line starting with space is indented (part of YAML); include it.
+		// Once we hit a non-indented, non-empty line, we've left YAML (hit dependency graph).
+		if len(lines[i]) > 0 && lines[i][0] != ' ' && !strings.HasPrefix(trimmed, "-") {
+			// Non-indented line that doesn't start YAML; this is the dependency graph
+			yamlEnd = i
+			break
+		}
+	}
+
+	return strings.Join(lines[yamlStart:yamlEnd], "\n")
 }
 
 // Dispatch assembles a prompt for the given task, calls the LLM, writes the output to a staging

@@ -36,7 +36,8 @@ func Run(planFile string, opts types.Options) error {
 	cache := llm.NewCache(".cache")
 
 	// Create the LLM caller.
-	caller := llm.NewCerebras(apiKey, cache)
+	const cerebrasModel = "gpt-oss-120b"
+	caller := llm.NewCerebras(apiKey, cerebrasModel, cache)
 
 	// Create the artifact store.
 	store := artifacts.NewStore(".artifacts")

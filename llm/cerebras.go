@@ -13,24 +13,47 @@ import (
 	"strings"
 )
 
-// Cerebras implements the LLMCaller interface for the Cerebras API.
+// Cerebras implements the LLMCaller interface for the Cerebras chat completions API.
 type Cerebras struct {
 	apiKey string
+	model  string
 	cache  *Cache
 	client *http.Client
 }
 
-// NewCerebras creates a new Cerebras caller with the given API key and cache.
+// NewCerebras creates a new Cerebras caller with the given API key, model, and cache.
 // The returned value implements the LLMCaller interface.
-func NewCerebras(apiKey string, cache *Cache) *Cerebras {
+func NewCerebras(apiKey string, model string, cache *Cache) *Cerebras {
 	return &Cerebras{
 		apiKey: apiKey,
+		model:  model,
 		cache:  cache,
 		client: http.DefaultClient,
 	}
 }
 
-// Call sends the prompt to the Cerebras API and returns the generated response.
+// cerebrasRequest is the request body for the Cerebras chat completions API.
+type cerebrasRequest struct {
+	Model    string             `json:"model"`
+	Messages []cerebrasMessage  `json:"messages"`
+}
+
+// cerebrasMessage is a single message in the Cerebras chat completions request.
+type cerebrasMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// cerebrasResponse is the response body from the Cerebras chat completions API.
+type cerebrasResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+}
+
+// Call sends the prompt to the Cerebras chat completions API and returns the response content.
 // It first checks the cache; on a cache miss it performs the HTTP request and stores the result.
 // Returns an error if any step fails.
 func (c *Cerebras) Call(ctx context.Context, prompt string) (string, error) {
@@ -47,10 +70,11 @@ func (c *Cerebras) Call(ctx context.Context, prompt string) (string, error) {
 	}
 
 	// Prepare request payload.
-	reqBody := struct {
-		Prompt string `json:"prompt"`
-	}{
-		Prompt: prompt,
+	reqBody := cerebrasRequest{
+		Model: c.model,
+		Messages: []cerebrasMessage{
+			{Role: "user", Content: prompt},
+		},
 	}
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
@@ -58,7 +82,7 @@ func (c *Cerebras) Call(ctx context.Context, prompt string) (string, error) {
 	}
 
 	// Build HTTP request.
-	const endpoint = "https://api.cerebras.ai/v1/completions"
+	const endpoint = "https://api.cerebras.ai/v1/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(bodyBytes)))
 	if err != nil {
 		return "", fmt.Errorf("call: create request error %w", err)
@@ -78,14 +102,14 @@ func (c *Cerebras) Call(ctx context.Context, prompt string) (string, error) {
 	}
 
 	// Decode response.
-	var respBody struct {
-		Response string `json:"response"`
-	}
-	decoder := json.NewDecoder(resp.Body)
-	if err := decoder.Decode(&respBody); err != nil {
+	var respBody cerebrasResponse
+	if err := json.NewDecoder(resp.Body).Decode(&respBody); err != nil {
 		return "", fmt.Errorf("call: decode response error %w", err)
 	}
-	result := respBody.Response
+	if len(respBody.Choices) == 0 {
+		return "", fmt.Errorf("call: empty choices in response")
+	}
+	result := respBody.Choices[0].Message.Content
 
 	// Store result in cache.
 	if setErr := c.cache.Set(hash, result); setErr != nil {
