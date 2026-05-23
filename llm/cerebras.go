@@ -13,26 +13,25 @@ import (
 	"strings"
 )
 
-// workerSystemPromptPath is the well-known location of the worker system prompt.
-// The file must exist at this path relative to the working directory.
-const workerSystemPromptPath = "worker-system-prompt.md"
-
 // Cerebras implements the LLMCaller interface for the Cerebras chat completions API.
 type Cerebras struct {
-	apiKey string
-	model  string
-	cache  *Cache
-	client *http.Client
+	apiKey       string
+	model        string
+	systemPrompt string // injected as the system role message; empty means no system message
+	cache        *Cache
+	client       *http.Client
 }
 
-// NewCerebras creates a new Cerebras caller with the given API key, model, and cache.
+// NewCerebras creates a new Cerebras caller with the given API key, model, system prompt, and cache.
+// Pass an empty systemPrompt to omit the system message (e.g. for decomposition calls).
 // The returned value implements the LLMCaller interface.
-func NewCerebras(apiKey string, model string, cache *Cache) *Cerebras {
+func NewCerebras(apiKey string, model string, systemPrompt string, cache *Cache) *Cerebras {
 	return &Cerebras{
-		apiKey: apiKey,
-		model:  model,
-		cache:  cache,
-		client: http.DefaultClient,
+		apiKey:       apiKey,
+		model:        model,
+		systemPrompt: systemPrompt,
+		cache:        cache,
+		client:       http.DefaultClient,
 	}
 }
 
@@ -76,19 +75,21 @@ func (c *Cerebras) Call(ctx context.Context, prompt string) (string, error) {
 	}
 
 	// Prepare request payload.
-    workerSystemPrompt, err := os.ReadFile(workerSystemPromptPath)
-	if err != nil {
-		return "", fmt.Errorf("call: read worker system prompt: %w", err)
+	// Include a system message only when one was provided at construction time.
+	// Decomposition calls pass an empty systemPrompt to avoid conflicting instructions.
+	messages := []cerebrasMessage{{Role: "user", Content: prompt}}
+	if c.systemPrompt != "" {
+		messages = []cerebrasMessage{
+			{Role: "system", Content: c.systemPrompt},
+			{Role: "user", Content: prompt},
+		}
 	}
 
 	reqBody := cerebrasRequest{
-		Model: c.model,
-        Temperature: "0",
-        Reasoning: "high",
-		Messages: []cerebrasMessage{
-            {Role: "system", Content: string(workerSystemPrompt)},
-			{Role: "user", Content: prompt},
-		},
+		Model:       c.model,
+		Temperature: "0",
+		Reasoning:   "high",
+		Messages:    messages,
 	}
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {

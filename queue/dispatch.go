@@ -56,7 +56,8 @@ func Decompose(planFile string, caller types.LLMCaller) ([]types.TaskSpec, error
 }
 
 // extractYAMLTasks finds and returns the YAML task list portion of the decomposition response,
-// skipping prose preamble (validation result) and the trailing dependency graph.
+// skipping prose preamble (validation result), markdown code fences, and the trailing dependency graph.
+// It handles LLM responses that wrap the YAML in ```yaml ... ``` fences.
 func extractYAMLTasks(resp string) string {
 	lines := strings.Split(resp, "\n")
 	var yamlStart, yamlEnd int
@@ -70,12 +71,13 @@ func extractYAMLTasks(resp string) string {
 		}
 	}
 	if yamlStart == -1 {
-		return resp // Fallback: return whole response and let unmarshaller fail with better error
+		// No task list found; return empty string so the caller produces a clear unmarshal error.
+		return ""
 	}
 
 	// Find last line that is part of YAML (either indented or blank within the task block).
-	// Dependency graph is plain text like "T1 → T2 → T3" (no leading spaces).
-	// Stop at first non-indented, non-empty line after YAML start.
+	// Stops at: markdown closing fence (```), dependency graph prose (e.g. "T1 → T2"),
+	// or any non-indented non-sequence line.
 	yamlEnd = len(lines)
 	for i := yamlStart + 1; i < len(lines); i++ {
 		trimmed := strings.TrimSpace(lines[i])
@@ -83,11 +85,16 @@ func extractYAMLTasks(resp string) string {
 		if trimmed == "" {
 			continue
 		}
-		// Line starting with '-' is a new task; include it.
-		// Line starting with space is indented (part of YAML); include it.
-		// Once we hit a non-indented, non-empty line, we've left YAML (hit dependency graph).
-		if len(lines[i]) > 0 && lines[i][0] != ' ' && !strings.HasPrefix(trimmed, "-") {
-			// Non-indented line that doesn't start YAML; this is the dependency graph
+		// Markdown closing fence signals end of YAML block.
+		if trimmed == "```" || strings.HasPrefix(trimmed, "```") {
+			yamlEnd = i
+			break
+		}
+		// A line is part of YAML if it starts with whitespace (indented field) or '-' (new task).
+		// Tabs are not valid YAML indentation but some models emit them; treat as indented.
+		firstByte := lines[i][0]
+		if firstByte != ' ' && firstByte != '\t' && !strings.HasPrefix(trimmed, "-") {
+			// Non-indented, non-sequence line: dependency graph or prose. Stop here.
 			yamlEnd = i
 			break
 		}
@@ -95,6 +102,7 @@ func extractYAMLTasks(resp string) string {
 
 	return strings.Join(lines[yamlStart:yamlEnd], "\n")
 }
+
 
 // Dispatch assembles a prompt for the given task, calls the LLM, writes the output to a staging
 // file, validates it inside an ephemeral container, and promotes the artifact on success.

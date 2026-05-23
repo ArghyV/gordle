@@ -35,9 +35,17 @@ func Run(planFile string, opts types.Options) error {
 	// Create a cache for LLM responses.
 	cache := llm.NewCache(".cache")
 
-	// Create the LLM caller.
+	// Read the worker system prompt once; used only for dispatch (code generation) calls.
+	// The decomposition caller intentionally omits a system prompt to avoid conflicting
+	// instructions with the decomposition prompt's own output format requirements.
+	workerSystemPrompt, err := os.ReadFile("worker-system-prompt.md")
+	if err != nil {
+		return fmt.Errorf("run: read worker system prompt: %w", err)
+	}
+
 	const cerebrasModel = "gpt-oss-120b"
-	caller := llm.NewCerebras(apiKey, cerebrasModel, cache)
+	decomposeCaller := llm.NewCerebras(apiKey, cerebrasModel, "", cache)
+	workerCaller := llm.NewCerebras(apiKey, cerebrasModel, string(workerSystemPrompt), cache)
 
 	// Create the artifact store.
 	store := artifacts.NewStore(".artifacts")
@@ -46,7 +54,7 @@ func Run(planFile string, opts types.Options) error {
 	validator := validator.NewContainerValidator("golang:1.22-alpine")
 
 	// Decompose the plan into tasks.
-	tasks, err := queue.Decompose(planFile, caller)
+	tasks, err := queue.Decompose(planFile, decomposeCaller)
 	if err != nil {
 		return fmt.Errorf("run: decompose error: %w", err)
 	}
@@ -67,7 +75,7 @@ func Run(planFile string, opts types.Options) error {
 
 		// Start a spinner while dispatching the task.
 		stopSpinner := spinnerStart(fmt.Sprintf("dispatching task %s", task.ID))
-		err = queue.Dispatch(task, store, caller, validator, opts.MaxRetries)
+		err = queue.Dispatch(task, store, workerCaller, validator, opts.MaxRetries)
 		stopSpinner()
 		if err != nil {
 			return fmt.Errorf("run: dispatch error: %w", err)
