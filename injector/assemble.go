@@ -5,6 +5,7 @@ package injector
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/ArghyV/gordle/types"
@@ -32,8 +33,7 @@ func Assemble(task types.TaskSpec, store types.ArtifactStore, grepIndex map[stri
 	if len(task.ArtifactIn) > 0 {
 		sb.WriteString("ArtifactIn:\n")
 		for _, ref := range task.ArtifactIn {
-			// Retrieve the artifact content; version 0 is used as a default.
-			content, getErr := store.Get(ref.Ref, 0)
+			content, getErr := readArtifact(ref, store)
 			if getErr != nil {
 				return "", fmt.Errorf("assemble: failed to get artifact %s: %w", ref.Ref, getErr)
 			}
@@ -65,4 +65,22 @@ func Assemble(task types.TaskSpec, store types.ArtifactStore, grepIndex map[stri
 	}
 
 	return sb.String(), nil
+}
+
+// readArtifact returns the content of an artifact.
+// design_doc artifacts are read directly from disk (ref is a relative path).
+// code_output and task_spec artifacts are fetched from the versioned store at version 1.
+func readArtifact(ref types.ArtifactRef, store types.ArtifactStore) ([]byte, error) {
+	if ref.Type == "design_doc" {
+		content, err := os.ReadFile(ref.Ref)
+		if err != nil {
+			return nil, fmt.Errorf("file does not exist")
+		}
+		return content, nil
+	}
+	content, err := store.Get(ref.Ref, 1)
+	if err != nil {
+		return nil, err
+	}
+	return content, nil
 }

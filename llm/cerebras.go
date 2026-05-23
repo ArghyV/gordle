@@ -13,6 +13,10 @@ import (
 	"strings"
 )
 
+// workerSystemPromptPath is the well-known location of the worker system prompt.
+// The file must exist at this path relative to the working directory.
+const workerSystemPromptPath = "worker-system-prompt.md"
+
 // Cerebras implements the LLMCaller interface for the Cerebras chat completions API.
 type Cerebras struct {
 	apiKey string
@@ -34,7 +38,9 @@ func NewCerebras(apiKey string, model string, cache *Cache) *Cerebras {
 
 // cerebrasRequest is the request body for the Cerebras chat completions API.
 type cerebrasRequest struct {
-	Model    string             `json:"model"`
+	Model       string          `json:"model"`
+    Temperature string          `json:"temperature"`
+    Reasoning   string          `json:"reasoning_effort"`
 	Messages []cerebrasMessage  `json:"messages"`
 }
 
@@ -70,9 +76,17 @@ func (c *Cerebras) Call(ctx context.Context, prompt string) (string, error) {
 	}
 
 	// Prepare request payload.
+    workerSystemPrompt, err := os.ReadFile(workerSystemPromptPath)
+	if err != nil {
+		return "", fmt.Errorf("call: read worker system prompt: %w", err)
+	}
+
 	reqBody := cerebrasRequest{
 		Model: c.model,
+        Temperature: "0",
+        Reasoning: "high",
 		Messages: []cerebrasMessage{
+            {Role: "system", Content: string(workerSystemPrompt)},
 			{Role: "user", Content: prompt},
 		},
 	}

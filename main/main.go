@@ -43,7 +43,7 @@ func Run(planFile string, opts types.Options) error {
 	store := artifacts.NewStore(".artifacts")
 
 	// Create the validator.
-	validator := validator.NewContainerValidator("alpine:latest")
+	validator := validator.NewContainerValidator("golang:1.22-alpine")
 
 	// Decompose the plan into tasks.
 	tasks, err := queue.Decompose(planFile, caller)
